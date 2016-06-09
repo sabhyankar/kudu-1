@@ -50,6 +50,7 @@
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.h" // TODO: remove this include - just needed for default port
 #include "kudu/master/master.pb.h"
@@ -643,6 +644,24 @@ KuduPredicate* KuduTable::NewComparisonPredicate(const Slice& col_name,
   }
 
   return new KuduPredicate(new ComparisonPredicateData(s->column(col_idx), op, value));
+}
+
+KuduPredicate* KuduTable::NewInListPredicate(const Slice& col_name,
+                                             std::vector<KuduValue*>* values) {
+  StringPiece name_sp(reinterpret_cast<const char*>(col_name.data()), col_name.size());
+  const Schema* s = data_->schema_.schema_;
+  int col_idx = s->find_column(name_sp);
+  if (col_idx == Schema::kColumnNotFound) {
+    // Since this function doesn't return an error, instead we create a special
+    // predicate that just returns the errors when we add it to the scanner.
+    //
+    // This makes the API more "fluent".
+    STLDeleteElements(values); // we always take ownership of 'values'.
+    delete values;
+    return new KuduPredicate(new ErrorPredicateData(
+      Status::NotFound("column not found", col_name)));
+  }
+  return new KuduPredicate(new InListPredicateData(s->column(col_idx), values));
 }
 
 ////////////////////////////////////////////////////////////

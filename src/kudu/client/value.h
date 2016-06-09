@@ -50,9 +50,16 @@ class KUDU_EXPORT KuduValue {
   // Construct a KuduValue by copying the value of the given Slice.
   static KuduValue* CopyString(Slice s);
 
+  // Returns true if KuduValue A < KuduValue B
+  friend bool operator<(const KuduValue& a, const KuduValue& b);
+
+  // Returns true if KuduValue A == KuduValue B
+  friend bool operator==(const KuduValue& a, const KuduValue& b);
+
   ~KuduValue();
  private:
   friend class ComparisonPredicateData;
+  friend class InListPredicateData;
   friend class KuduColumnSpec;
 
   class KUDU_NO_EXPORT Data;

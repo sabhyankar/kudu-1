@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 #include <limits>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,7 @@
 
 using std::count_if;
 using std::numeric_limits;
+using std::set;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -107,6 +109,23 @@ class PredicateTest : public KuduTest {
       rows += batch.NumRows();
     }
     return rows;
+  }
+
+  template <typename T>
+  void RemoveDuplicates(vector<T>* in) {
+    set<T> s(in->begin(), in->end());
+    in->assign(s.begin(), s.end());
+  }
+
+  template <typename T>
+  int CountMatchedRows(vector<T> values, vector<T> deduped_test_values) {
+
+    int count = 0;
+    for (const T v : values) {
+      count += count_if(deduped_test_values.begin(), deduped_test_values.end(),
+                        [&] (const T t) { return t == v; });
+    }
+    return count;
   }
 
   // Returns a vector of ints from -50 (inclusive) to 50 (exclusive), and
@@ -276,6 +295,21 @@ class PredicateTest : public KuduTest {
         }));
       }
     }
+
+    { // value IN (<int-list>)
+      vector<T> deduped_test_values(test_values);
+      RemoveDuplicates<T>(&deduped_test_values);
+      vector<KuduValue*> vals;
+      for (const T& v: test_values) {
+        vals.push_back(KuduValue::FromInt(v));
+      }
+
+      int count = CountMatchedRows<T>(values, deduped_test_values);
+      ASSERT_EQ(count, CountRows(table, {
+        table->NewInListPredicate("value",
+                                  &vals),
+      }));
+    }
   }
 
   // Check string predicates against the specified table.
@@ -350,6 +384,21 @@ class PredicateTest : public KuduTest {
                                             KuduValue::CopyString("a")),
         }));
       }
+    }
+
+    { // value IN (<string-list>)
+      vector<string> deduped_test_values(test_values);
+      RemoveDuplicates<string>(&deduped_test_values);
+      vector<KuduValue*> vals;
+      for (const string& v: test_values) {
+        vals.push_back(KuduValue::CopyString(v));
+      }
+
+      int count = CountMatchedRows<string>(values, deduped_test_values);
+      ASSERT_EQ(count, CountRows(table, {
+        table->NewInListPredicate("value",
+                                  &vals),
+      }));
     }
   }
 
@@ -601,6 +650,20 @@ TEST_F(PredicateTest, TestFloatPredicates) {
       }));
     }
   }
+  { // value IN (<float-list>)
+    vector<float> deduped_test_values(test_values);
+    RemoveDuplicates<float>(&deduped_test_values);
+    vector<KuduValue*> vals;
+    for (const float& v: test_values) {
+      vals.push_back(KuduValue::FromFloat(v));
+    }
+
+    int count = CountMatchedRows<float>(values, deduped_test_values);
+    ASSERT_EQ(count, CountRows(table, {
+      table->NewInListPredicate("value",
+                                &vals),
+    }));
+  }
 }
 
 TEST_F(PredicateTest, TestDoublePredicates) {
@@ -683,6 +746,20 @@ TEST_F(PredicateTest, TestDoublePredicates) {
                                           KuduValue::FromDouble(0.0)),
       }));
     }
+  }
+  { // value IN (<double-list>)
+    vector<double> deduped_test_values(test_values);
+    RemoveDuplicates<double>(&deduped_test_values);
+    vector<KuduValue*> vals;
+    for (const double& v: test_values) {
+      vals.push_back(KuduValue::FromDouble(v));
+    }
+
+    int count = CountMatchedRows<double>(values, deduped_test_values);
+    ASSERT_EQ(count, CountRows(table, {
+      table->NewInListPredicate("value",
+                                &vals),
+    }));
   }
 }
 

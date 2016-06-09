@@ -188,5 +188,44 @@ Status KuduValue::Data::CheckAndPointToString(const string& col_name,
   return Status::OK();
 }
 
+bool operator<(const KuduValue& a, const KuduValue& b) {
+
+  // Both KuduValues should be of the same type
+  if (a.data_->type_ != b.data_->type_) {
+    return false;
+  }
+
+  switch (a.data_->type_) {
+    case KuduValue::Data::INT:
+      return a.data_->int_val_ < b.data_->int_val_;
+    case KuduValue::Data::FLOAT:
+      return a.data_->float_val_ < b.data_->float_val_;
+    case KuduValue::Data::DOUBLE:
+      return a.data_->double_val_ < b.data_->double_val_;
+    case KuduValue::Data::SLICE:
+      return a.data_->slice_val_.compare(b.data_->slice_val_) < 0;
+  }
+  LOG(FATAL);
+}
+
+bool operator==(const KuduValue& a, const KuduValue& b) {
+
+  // Both KuduValues should be of the same type
+  if (a.data_->type_ != b.data_->type_) {
+    return false;
+  }
+
+  switch (a.data_->type_) {
+    case KuduValue::Data::INT:
+      return a.data_->int_val_ == b.data_->int_val_;
+    case KuduValue::Data::FLOAT:
+      return a.data_->float_val_ == b.data_->float_val_;
+    case KuduValue::Data::DOUBLE:
+      return a.data_->double_val_ == b.data_->double_val_;
+    case KuduValue::Data::SLICE:
+      return a.data_->slice_val_.compare(b.data_->slice_val_) == 0;
+  }
+  LOG(FATAL);
+}
 } // namespace client
 } // namespace kudu

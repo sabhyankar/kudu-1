@@ -48,6 +48,7 @@ class KUDU_EXPORT KuduPredicate {
   class KUDU_NO_EXPORT Data;
  private:
   friend class ComparisonPredicateData;
+  friend class InListPredicateData;
   friend class ErrorPredicateData;
   friend class KuduTable;
   friend class ScanConfiguration;

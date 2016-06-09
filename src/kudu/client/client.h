@@ -475,6 +475,26 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
                                         KuduPredicate::ComparisonOp op,
                                         KuduValue* value);
 
+  // Create a new list predicate which can be used for scanners
+  // on this table. This predicate is used to specify a list of values that a column
+  // can be compared against. The row is selected if the value of the column matches any
+  // value from the list.
+  //
+  // The type of entries in the list must correspond to the type of the column to which
+  // the predicate is to be applied. For example, if the given column is
+  // any type of integer, the KuduValues should also be integers, with the
+  // values in the valid range for the column type. No attempt is made to cast
+  // between floating point and integer values, or numeric and string values.
+  //
+  // The caller owns the result until it is passed into KuduScanner::AddConjunctPredicate().
+  // The returned predicate takes ownership of the list.
+  //
+  // In the case of an error (e.g. an invalid column name), a non-NULL value
+  // is still returned. The error will be returned when attempting to add this
+  // predicate to a KuduScanner.
+  KuduPredicate* NewInListPredicate(const Slice& col_name,
+                                    std::vector<KuduValue*>* values);
+
   KuduClient* client() const;
 
   const PartitionSchema& partition_schema() const;

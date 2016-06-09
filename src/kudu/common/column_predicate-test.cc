@@ -160,6 +160,151 @@ class TestColumnPredicate : public KuduTest {
               ColumnPredicate::None(column),
               PredicateType::None);
 
+
+    // InList
+
+    vector<void*> tmp;
+    vector<void*> tmp2;
+    vector<void*> tmp_result;
+    //  [------) AND
+    //    (x x   x)
+    // =  (x x)
+    tmp = {&values[2], &values[3], &values[5]};
+    tmp_result = {&values[2], &values[3]};
+    TestMerge(ColumnPredicate::Range(column, &values[1], &values[4]),
+              ColumnPredicate::InList(column, &tmp),
+              ColumnPredicate::InList(column, &tmp_result),
+              PredicateType::InList);
+
+    //    [------) AND
+    // (x          x)
+    // = None
+    tmp.clear();
+    tmp2.clear();
+    tmp_result.clear();
+    tmp = {&values[1], &values[5]};
+    TestMerge(ColumnPredicate::Range(column, &values[2], &values[4]),
+              ColumnPredicate::InList(column, &tmp),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //  [------) AND
+    //           (x x)
+    // =
+    // None
+    tmp.clear();
+    tmp2.clear();
+    tmp_result.clear();
+    tmp = {&values[5], &values[6]};
+    TestMerge(ColumnPredicate::Range(column, &values[1], &values[4]),
+              ColumnPredicate::InList(column, &tmp),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // (x x x) AND
+    //    |
+    // =  |
+    tmp.clear();
+    tmp2.clear();
+    tmp_result.clear();
+    tmp = {&values[1], &values[3], &values[6]};
+    TestMerge(ColumnPredicate::InList(column, &tmp),
+              ColumnPredicate::Equality(column, &values[3]),
+              ColumnPredicate::Equality(column, &values[3]),
+              PredicateType::Equality);
+
+    // (x x x) AND
+    //         |
+    // =  None
+    tmp.clear();
+    tmp2.clear();
+    tmp_result.clear();
+    tmp = {&values[1], &values[3], &values[5]};
+    TestMerge(ColumnPredicate::InList(column, &tmp),
+              ColumnPredicate::Equality(column, &values[6]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //  (x x x) AND
+    //  (x x)
+    // =(x x)
+    tmp.clear();
+    tmp2.clear();
+    tmp_result.clear();
+    tmp = {&values[1], &values[3], &values[6]};
+    tmp2 = {&values[1], &values[3]};
+    tmp_result = {&values[1], &values[3]};
+    TestMerge(ColumnPredicate::InList(column, &tmp),
+              ColumnPredicate::InList(column, &tmp2),
+              ColumnPredicate::InList(column, &tmp_result),
+              PredicateType::InList);
+
+    //    (x x x) AND
+    //  (x x x)
+    // =  (x x)
+    tmp.clear();
+    tmp2.clear();
+    tmp_result.clear();
+    tmp = {&values[2], &values[3], &values[4]};
+    tmp2 = {&values[1], &values[2], &values[3]};
+    tmp_result = {&values[2], &values[3]};
+    TestMerge(ColumnPredicate::InList(column, &tmp),
+              ColumnPredicate::InList(column, &tmp2),
+              ColumnPredicate::InList(column, &tmp_result),
+              PredicateType::InList);
+
+
+    //  (x x x) AND
+    //  (x)
+    // = |
+    tmp.clear();
+    tmp_result.clear();
+    tmp2.clear();
+    tmp = {&values[1], &values[3], &values[6]};
+    tmp2 = {&values[1]};
+    TestMerge(ColumnPredicate::InList(column, &tmp),
+              ColumnPredicate::InList(column, &tmp2),
+              ColumnPredicate::Equality(column, &values[1]),
+              PredicateType::Equality);
+
+    //      (x x x) AND
+    //  (x)
+    // = None
+    tmp.clear();
+    tmp_result.clear();
+    tmp2.clear();
+    tmp = {&values[2], &values[3], &values[4]};
+    tmp2 = {&values[1]};
+    TestMerge(ColumnPredicate::InList(column, &tmp),
+              ColumnPredicate::InList(column, &tmp2),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //  (x x x) AND
+    //  None
+    // = None
+    tmp.clear();
+    tmp_result.clear();
+    tmp2.clear();
+    tmp = {&values[2], &values[3], &values[4]};
+    TestMerge(ColumnPredicate::InList(column, &tmp),
+              ColumnPredicate::None(column),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //   (x x x) AND
+    //   IS NOT NULL
+    // = (x x x)
+    tmp.clear();
+    tmp_result.clear();
+    tmp2.clear();
+    tmp = {&values[2], &values[3], &values[4]};
+    tmp_result = {&values[2], &values[3], &values[4]};
+    TestMerge(ColumnPredicate::InList(column, &tmp),
+              ColumnPredicate::IsNotNull(column),
+              ColumnPredicate::InList(column, &tmp_result),
+              PredicateType::InList);
+
     // None
 
     // None AND
@@ -370,4 +515,27 @@ TEST_F(TestColumnPredicate, TestSelectivity) {
             0);
 }
 
+// Test the InList constructor
+TEST_F(TestColumnPredicate, TestInList) {
+  {
+    ColumnSchema column("c", INT32);
+    int tmp[] = {5,6,10};
+    vector<void*> values;
+    for (auto i = 0; i < 3; ++i)
+      values.push_back(&tmp[i]);
+
+    ASSERT_EQ(PredicateType::InList,
+              ColumnPredicate::InList(column, &values).predicate_type());
+  }
+  {
+    ColumnSchema column("c", STRING);
+    Slice tmp[] = {Slice("",0),Slice("\0\0",2),Slice("\0\0\0",3)};
+    vector<void*> values;
+    for (auto i = 0; i < 3; ++i)
+      values.push_back(&tmp[i]);
+
+    ASSERT_EQ(PredicateType::InList,
+              ColumnPredicate::InList(column, &values).predicate_type());
+  }
+}
 } // namespace kudu

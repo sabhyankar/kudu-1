@@ -17,6 +17,8 @@
 #ifndef KUDU_CLIENT_SCAN_PREDICATE_INTERNAL_H
 #define KUDU_CLIENT_SCAN_PREDICATE_INTERNAL_H
 
+#include <vector>
+
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/value.h"
 #include "kudu/client/value-internal.h"
@@ -86,6 +88,28 @@ class ComparisonPredicateData : public KuduPredicate::Data {
   ColumnSchema col_;
   KuduPredicate::ComparisonOp op_;
   gscoped_ptr<KuduValue> val_;
+};
+
+// A list predicate for a column and a list of constant values.
+class InListPredicateData : public KuduPredicate::Data {
+ public:
+  InListPredicateData(ColumnSchema col,
+                      std::vector<KuduValue*>* values);
+
+  virtual ~InListPredicateData();
+
+  Status AddToScanSpec(ScanSpec* spec, Arena* arena) override;
+
+  InListPredicateData* Clone() const override {
+    std::vector<KuduValue*> val_cloned(vals_);
+    return new InListPredicateData(col_, &val_cloned);
+  }
+
+ private:
+  friend class KuduScanner;
+
+  ColumnSchema col_;
+  std::vector<KuduValue*> vals_;
 };
 
 } // namespace client

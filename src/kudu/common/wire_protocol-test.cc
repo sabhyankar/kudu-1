@@ -15,7 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <vector>
+
+#include <boost/optional.hpp>
 #include <gtest/gtest.h>
+#include "kudu/common/column_predicate.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
@@ -24,6 +28,8 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+using std::vector;
 
 namespace kudu {
 
@@ -328,6 +334,26 @@ TEST_F(WireProtocolTest, TestColumnDefaultValue) {
   ASSERT_TRUE(col5fpb.has_write_default());
   ASSERT_EQ(read_default_u32, *static_cast<const uint32_t *>(col5fpb.read_default_value()));
   ASSERT_EQ(write_default_u32, *static_cast<const uint32_t *>(col5fpb.write_default_value()));
+}
+
+TEST_F(WireProtocolTest, TestColumnPredicateInList) {
+  ColumnSchema col1("col1", INT32);
+  vector<ColumnSchema> cols = { col1 };
+  Schema schema(cols, 1);
+
+  int tmp[] = {5,6,10};
+  vector<void*> values;
+  for (auto i = 0; i < 3; ++i)
+    values.push_back(&tmp[i]);
+
+  kudu::ColumnPredicate cp = kudu::ColumnPredicate::InList(col1, &values);
+  ColumnPredicatePB pb;
+
+  ASSERT_NO_FATAL_FAILURE(ColumnPredicateToPB(cp, &pb));
+
+  Arena arena(1024,1024*1024);
+  boost::optional<ColumnPredicate> predicate;
+  ASSERT_OK(ColumnPredicateFromPB(schema, &arena, pb, &predicate));
 }
 
 } // namespace kudu

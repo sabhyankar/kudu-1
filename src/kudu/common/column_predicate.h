@@ -19,6 +19,7 @@
 
 #include <boost/optional.hpp>
 #include <string>
+#include <vector>
 
 #include "kudu/common/schema.h"
 
@@ -44,6 +45,10 @@ enum class PredicateType {
 
   // A predicate which evaluates to true if the value is not null.
   IsNotNull,
+
+  // A predicate which evaluates to true if the column value is present in
+  // a value list.
+  InList,
 };
 
 // A predicate which can be evaluated over a block of column values.
@@ -96,6 +101,12 @@ class ColumnPredicate {
   // Creates a new IS NOT NULL predicate for the column.
   static ColumnPredicate IsNotNull(ColumnSchema column);
 
+  // Create a new IN <LIST> predicate for the column.
+  //
+  // The values are not copied, and must outlive the returned predicate.
+  // The InList will be simplified into an Equality, Range or None if possible.
+  static ColumnPredicate InList(ColumnSchema column, std::vector<void*>* values);
+  
   // Returns the type of this predicate.
   PredicateType predicate_type() const {
     return predicate_type_;
@@ -151,15 +162,25 @@ class ColumnPredicate {
     return column_;
   }
 
+  // Returns the list of values if this is an in-list predicate.
+  const std::vector<void*>& raw_values() const {
+    return values_;
+  }
+
  private:
 
   friend class TestColumnPredicate;
 
-  // Creates a new column predicate.
+  // Creates a new range/equality column predicate.
   ColumnPredicate(PredicateType predicate_type,
                   ColumnSchema column,
                   const void* lower,
                   const void* upper);
+
+  // Creates a new InList column predicate.
+  ColumnPredicate(PredicateType predicate_type,
+                  ColumnSchema column,
+                  std::vector<void*>* values);
 
   // Creates a new predicate which matches no values.
   static ColumnPredicate None(ColumnSchema column);
@@ -176,6 +197,22 @@ class ColumnPredicate {
   // Merge another predicate into this Equality predicate.
   void MergeIntoEquality(const ColumnPredicate& other);
 
+  // Merge another predicate into this InList predicate.
+  void MergeIntoInList(const ColumnPredicate& other);
+
+  // For a Range type predicate, this helper function checks
+  // whether a given value is in the range.
+  bool CheckValueInRange(const void* value) const;
+
+  // For an InList type predicate, this helper function checks
+  // whether a given value is in the list.
+  bool CheckValueInList(const void* value) const;
+
+  // For an InList type predicate, this helper function
+  // modifies the values_ list to be an intersection of the values_ list
+  // and the from_list.
+  void MergeInLists(const ColumnPredicate& other);
+
   // The type of this predicate.
   PredicateType predicate_type_;
 
@@ -188,6 +225,9 @@ class ColumnPredicate {
 
   // The exclusive upper bound value if this is a Range predicate.
   const void* upper_;
+
+  // The list of values to check column against if this is an InList predicate.
+  std::vector<void*> values_;
 };
 
 // Compares predicates according to selectivity. Predicates that match fewer

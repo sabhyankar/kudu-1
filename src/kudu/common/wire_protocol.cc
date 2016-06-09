@@ -329,6 +329,30 @@ void CopyPredicateBoundToPB(const ColumnSchema& col, const void* bound_src, stri
   bound_dst->assign(reinterpret_cast<const char*>(src), size);
 }
 
+void CopyListPredicateValuesToPB(const ColumnSchema& col,
+                                 const vector<void*>& bound_src,
+                                 RepeatedPtrField<string>* bound_dst) {
+
+  if (col.type_info()->physical_type() == BINARY) {
+    // Copying an InList of strings involves an extra level of indirection through
+    // every owning slice.
+    for (auto idx = bound_src.begin(); idx != bound_src.end(); ++idx) {
+      const void* src;
+      size_t size;
+      const Slice* s = reinterpret_cast<const Slice*>(*idx);
+      src = s->data();
+      size = s->size();
+      bound_dst->Add()->assign(reinterpret_cast<const char*>(src),size);
+    }
+  } else {
+    size_t size = col.type_info()->size();
+    for (auto idx = bound_src.begin(); idx != bound_src.end(); ++idx) {
+      const void* src = *idx;
+      bound_dst->Add()->assign(reinterpret_cast<const char*>(src),size);
+    }
+  }
+}
+
 // Extract a void* pointer suitable for use in a ColumnRangePredicate from the
 // string protobuf bound. This validates that the pb_value has the correct
 // length, copies the data into 'arena', and sets *result to point to it.
@@ -355,6 +379,28 @@ Status CopyPredicateBoundFromPB(const ColumnSchema& schema,
                               schema.ToString(), expected_size, pb_value.size()));
     }
     *result = data_copy;
+  }
+
+  return Status::OK();
+}
+
+Status CopyListPredicateValuesFromPB(const ColumnSchema& schema,
+                                     const RepeatedPtrField<string>& pb_values,
+                                     Arena* arena,
+                                     vector<void*>* result) {
+
+  // Copy each of the values in the in list to the Arena.
+  for (auto idx = pb_values.begin(); idx != pb_values.end(); ++idx) {
+    uint8_t* data_copy = static_cast<uint8_t*>(arena->AllocateBytes(idx->size()));
+    memcpy(data_copy, idx->c_str(), idx->size());
+
+    // If the type is of variable length, then we need to return a pointer to a Slice
+    // element pointing to the string.
+    if (schema.type_info()->physical_type() == BINARY) {
+      result->push_back(arena->NewObject<Slice>(data_copy, (*idx).size()));
+    } else {
+      result->push_back(data_copy);
+    }
   }
 
   return Status::OK();
@@ -387,6 +433,12 @@ void ColumnPredicateToPB(const ColumnPredicate& predicate,
     };
     case PredicateType::IsNotNull: {
       pb->mutable_is_not_null();
+      return;
+    };
+    case PredicateType::InList: {
+      CopyListPredicateValuesToPB(predicate.column(),
+                                  predicate.raw_values(),
+                                  pb->mutable_in_list()->mutable_values());
       return;
     };
     case PredicateType::None: LOG(FATAL) << "None predicate may not be converted to protobuf";
@@ -437,6 +489,17 @@ Status ColumnPredicateFromPB(const Schema& schema,
       const void* value = nullptr;
       RETURN_NOT_OK(CopyPredicateBoundFromPB(col, equality.value(), arena, &value));
       *predicate = ColumnPredicate::Equality(col, value);
+      break;
+    };
+    case ColumnPredicatePB::kInList: {
+      const auto& inlist = pb.in_list();
+      if (inlist.values_size() <= 0) {
+        return Status::InvalidArgument("Empty inlist predicate on column: no value",
+                                       col.name());
+      }
+      vector<void*> values;
+      RETURN_NOT_OK(CopyListPredicateValuesFromPB(col, inlist.values(), arena, &values));
+      *predicate = ColumnPredicate::InList(col, &values);
       break;
     };
     case ColumnPredicatePB::kIsNotNull: {

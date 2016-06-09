@@ -18,15 +18,21 @@
 #include "kudu/client/scan_predicate.h"
 
 #include <boost/optional.hpp>
+#include <algorithm>
 #include <utility>
+#include <vector>
 
 #include "kudu/client/scan_predicate-internal.h"
 #include "kudu/client/value-internal.h"
 #include "kudu/client/value.h"
 #include "kudu/common/scan_spec.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 
 using std::move;
+using std::sort;
+using std::unique;
+using std::vector;
 using boost::optional;
 
 namespace kudu {
@@ -89,6 +95,48 @@ Status ComparisonPredicateData::AddToScanSpec(ScanSpec* spec, Arena* arena) {
     default:
       return Status::InvalidArgument(Substitute("invalid comparison op: $0", op_));
   }
+  return Status::OK();
+}
+
+InListPredicateData::InListPredicateData(ColumnSchema col,
+                                         vector<KuduValue*>* values)
+    : col_(move(col)) {
+  vals_.swap(*values);
+
+  // Remove duplicate KuduValues from vals_ list.
+  if (vals_.size() > 1) {
+
+    sort(vals_.begin(), vals_.end(),
+         [](KuduValue* a, KuduValue* b) { return *a < *b; });
+    vals_.erase(unique(vals_.begin(), vals_.end(),
+                       [](KuduValue* a, KuduValue* b) { return *a == *b; }),
+                vals_.end());
+  }
+}
+
+InListPredicateData::~InListPredicateData() {
+  STLDeleteElements(&vals_);
+}
+
+Status InListPredicateData::AddToScanSpec(ScanSpec* spec, Arena* arena) {
+
+  vector<void*> vals_list;
+  for (auto value : vals_) {
+    void* val_void;
+    // The local vals_ list consists of the deduped/sorted list of KuduValue pointers
+    // that make up the InList. For every value in the vals_ list a call to
+    // CheckTypeAndGetPointer is made to get a local pointer (val_void) to the
+    // underlying Data object. The local list (vals_list) of all the val_void pointers
+    // is passed to the ColumnPredicate::InList constructor. The constructor for
+    // ColumnPredicate::InList will assume ownership of the Data pointers via a swap.
+    RETURN_NOT_OK(value->data_->CheckTypeAndGetPointer(col_.name(),
+                                                       col_.type_info()->physical_type(),
+                                                       &val_void));
+    vals_list.push_back(val_void);
+  }
+
+  spec->AddPredicate(ColumnPredicate::InList(col_, &vals_list));
+
   return Status::OK();
 }
 
